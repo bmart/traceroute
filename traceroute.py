@@ -17,6 +17,7 @@ import urllib2
 from subprocess import Popen, PIPE
 import requests
 import netifaces
+import time
 
 USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
 
@@ -35,25 +36,29 @@ class Traceroute(object):
             json_file = open("sources.json", "r").read()
             sources = json.loads(json_file.replace("_IP_ADDRESS_", ip_address))
             self.source = sources[country]
+        self.tmp_dir = tmp_dir
+
+        self.no_geo = no_geo
+        self.timeout = timeout
+        self.debug = debug
+        self.locations = {}
+        self.hops = []
         self.country = country
 
         if self.country == 'LO':
             self.local_mode = True
             self.pub_ip     = self._lookup_public_ip()
             self.ifaces     = self._get_network_interface_info()
+            self.routes     = self._get_network_routes()
         else:
             self.local_mode = False
 
-        self.tmp_dir = tmp_dir
-        self.no_geo = no_geo
-        self.timeout = timeout
-        self.debug = debug
-        self.locations = {}
-        self.hops = []
 
-        self._initialize()
+        self.probe_start = time.time() * 1000
+        self._run_traceroute()
+        self.probe_end   = time.time() * 1000
 
-    def _initialize(self):
+    def _run_traceroute(self):
         """
         Instead of running the actual traceroute command, we will fetch
         standard traceroute results from several publicly available webpages
@@ -88,14 +93,17 @@ class Traceroute(object):
         self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
 
     def get_report(self):
-        report_structure = {}
+        report = {}
 
-        report_structure['hops'] = self.hops
+        report['hops']        = self.hops
+        report['probe_start'] = self.probe_start
+        report['probe_end']   = self.probe_end
         if self.local_mode:
-            report_structure['pub_ip'] = self.pub_ip
-            report_structure['ifaces'] = self.ifaces
+            report['pub_ip'] = self.pub_ip
+            report['ifaces'] = self.ifaces
+            report['routes'] = self.routes 
         
-        return report_structure
+        return report
 
     def _lookup_public_ip(self):
 
@@ -116,17 +124,27 @@ class Traceroute(object):
         for i in netifaces.interfaces():
            addr = netifaces.ifaddresses(i)
 
-           # only retrieve interfaces that are active
-           if netifaces.AF_INET in addr.keys(): 
+           try:
                iface_list.append( {i : { 
                     'ip_address' : addr[netifaces.AF_INET][0]['addr'],
                     'mac'        : addr[netifaces.AF_LINK][0]['addr']
                }})
+           except KeyError,e:
+               self.print_debug("Key not found - _get_network_interface_info - {}".format(addr))
 
         return iface_list
 
 
+    def _get_network_routes(self):
+        routes = []
 
+        gw = netifaces.gateways()
+        if 'default' in gw.keys():
+            routes.append( {
+                'default' : gw['default'][netifaces.AF_INET]
+            })
+
+        return routes
 
 
     def get_traceroute_output(self):
@@ -149,6 +167,8 @@ class Traceroute(object):
             content = "{}</pre>".format(content)
             traceroute = re.findall(pattern, content)[0].strip()
         return (status_code, traceroute)
+
+    
 
     def _get_hops(self, traceroute):
         """
@@ -339,13 +359,14 @@ def main():
     cmdparser.add_option(
         "-d", "--debug", action="store_true", default=False,
         help="Show debug output (default: False)")
-    options, _ = cmdparser.parse_args()
-    json_file = open(options.json_file, "r").read()
-    sources = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
+
+    options, _  = cmdparser.parse_args()
+    json_file   = open(options.json_file, "r").read()
+    sources     = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
 
 
     # Get Hope info using Traceroute Object
-    traceroute = Traceroute(ip_address=options.ip_address,
+    traceroute  = Traceroute(ip_address=options.ip_address,
                             source=sources[options.country],
                             country=options.country,
                             tmp_dir=options.tmp_dir,
@@ -362,8 +383,7 @@ def main():
     """
 
     
-    report = traceroute.get_report()    
-
+    report = traceroute.get_report()
 
     print(json.dumps(report, indent=4))
     return 0

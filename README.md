@@ -5,7 +5,9 @@ Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](
 
 ## Installation
 
-Save traceroute.py into a directory with its path stored in your PYTHONPATH environment variable.
+1. Install dependencies listed in requirements.txt file. Pip is recommended. You could also use virtualenv to keep things isolated.
+2. Save traceroute.py into a directory with its path stored in your PYTHONPATH environment variable. (if using virtualenv, copy it here)
+
 
 ## Usage
 

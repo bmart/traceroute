@@ -16,6 +16,7 @@ import urllib
 import urllib2
 from subprocess import Popen, PIPE
 import requests
+import netifaces
 
 USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
 
@@ -39,6 +40,7 @@ class Traceroute(object):
         if self.country == 'LO':
             self.local_mode = True
             self.pub_ip     = self._lookup_public_ip()
+            self.ifaces     = self._get_network_interface_info()
         else:
             self.local_mode = False
 
@@ -91,6 +93,7 @@ class Traceroute(object):
         report_structure['hops'] = self.hops
         if self.local_mode:
             report_structure['pub_ip'] = self.pub_ip
+            report_structure['ifaces'] = self.ifaces
         
         return report_structure
 
@@ -107,6 +110,21 @@ class Traceroute(object):
                 return  ip_data['ip']
         else:
             return 'Unable to determine IP'
+
+    def _get_network_interface_info(self):
+        iface_list = []
+        for i in netifaces.interfaces():
+           addr = netifaces.ifaddresses(i)
+
+           # only retrieve interfaces that are active
+           if netifaces.AF_INET in addr.keys(): 
+               iface_list.append( {i : { 
+                    'ip_address' : addr[netifaces.AF_INET][0]['addr'],
+                    'mac'        : addr[netifaces.AF_LINK][0]['addr']
+               }})
+
+        return iface_list
+
 
 
 

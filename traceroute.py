@@ -15,8 +15,10 @@ import sys
 import urllib
 import urllib2
 from subprocess import Popen, PIPE
+import requests
 
 USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
+
 
 
 class Traceroute(object):
@@ -33,13 +35,23 @@ class Traceroute(object):
             sources = json.loads(json_file.replace("_IP_ADDRESS_", ip_address))
             self.source = sources[country]
         self.country = country
+
+        if self.country == 'LO':
+            self.local_mode = True
+            self.pub_ip     = self._lookup_public_ip()
+        else:
+            self.local_mode = False
+
         self.tmp_dir = tmp_dir
         self.no_geo = no_geo
         self.timeout = timeout
         self.debug = debug
         self.locations = {}
+        self.hops = []
 
-    def traceroute(self):
+        self._initialize()
+
+    def _initialize(self):
         """
         Instead of running the actual traceroute command, we will fetch
         standard traceroute results from several publicly available webpages
@@ -62,16 +74,42 @@ class Traceroute(object):
         traceroute = open(filepath, "r").read()
 
         # hop_num, hosts
-        hops = self.get_hops(traceroute)
+        hops = self._get_hops(traceroute)
 
         # hop_num, hostname, ip_address, rtt
-        hops = self.get_formatted_hops(hops)
+        self.hops = self._get_formatted_hops()
 
         if not self.no_geo:
             # hop_num, hostname, ip_address, rtt, latitude, longitude
-            hops = self.get_geocoded_hops(hops)
+            self.hops = self._get_geocoded_hops()
 
-        return hops
+        self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
+
+    def get_report(self):
+        report_structure = {}
+
+        report_structure['hops'] = self.hops
+        if self.local_mode:
+            report_structure['pub_ip'] = self.pub_ip
+        
+        return report_structure
+
+    def _lookup_public_ip(self):
+
+        #TODO Don't forget to put timeout from above here....
+        response = requests.get('https://api.ipify.org?format=json')
+
+        if response.status_code == 200:
+            ip_data = response.json()
+            if 'ip' not in ip_data.keys():
+                return 'Unable to determine IP'
+            else:
+                return  ip_data['ip']
+        else:
+            return 'Unable to determine IP'
+
+
+
 
     def get_traceroute_output(self):
         """
@@ -94,12 +132,11 @@ class Traceroute(object):
             traceroute = re.findall(pattern, content)[0].strip()
         return (status_code, traceroute)
 
-    def get_hops(self, traceroute):
+    def _get_hops(self, traceroute):
         """
         Returns hops from traceroute output in an array of dicts each
         with hop number and the associated hosts data.
         """
-        hops = []
         regex = r'^(?P<hop_num>\d+)(?P<hosts>.*?)$'
         lines = traceroute.split("\n")
         for line in lines:
@@ -112,17 +149,16 @@ class Traceroute(object):
             except AttributeError:
                 continue
             self.print_debug(hop)
-            hops.append(hop)
-        return hops
+            self.hops.append(hop)
 
-    def get_formatted_hops(self, hops):
+    def _get_formatted_hops(self):
         """
         Hosts data from get_hops() is represented in a single string.
         We use this function to better represent the hosts data in a dict.
         """
         formatted_hops = []
         regex = r'(?P<h>[\w.-]+) \((?P<i>[\d.]+)\) (?P<r>\d{1,4}.\d{1,4} ms)'
-        for hop in hops:
+        for hop in self.hops:
             hop_num = int(hop['hop_num'].strip())
             hosts = hop['hosts'].replace("  ", " ").strip()
             # Using re.findall(), we split the hosts, then for each host,
@@ -139,13 +175,14 @@ class Traceroute(object):
                 formatted_hops.append(hop_context)
         return formatted_hops
 
-    def get_geocoded_hops(self, hops):
+
+    def _get_geocoded_hops(self):
         """
         Returns hops from get_formatted_hops() with geolocation information
         for each hop.
         """
         geocoded_hops = []
-        for hop in hops:
+        for hop in self.hops:
             ip_address = hop['ip_address']
             location = None
             if ip_address in self.locations:
@@ -287,6 +324,9 @@ def main():
     options, _ = cmdparser.parse_args()
     json_file = open(options.json_file, "r").read()
     sources = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
+
+
+    # Get Hope info using Traceroute Object
     traceroute = Traceroute(ip_address=options.ip_address,
                             source=sources[options.country],
                             country=options.country,
@@ -294,8 +334,20 @@ def main():
                             no_geo=options.no_geo,
                             timeout=options.timeout,
                             debug=options.debug)
-    hops = traceroute.traceroute()
-    print(json.dumps(hops, indent=4))
+    """
+        Pseudo-Code
+
+        report = traceroute.get_report()
+
+        print(json.dumps(report, indent=4)
+
+    """
+
+    
+    report = traceroute.get_report()    
+
+
+    print(json.dumps(report, indent=4))
     return 0
 
 

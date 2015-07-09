@@ -44,6 +44,7 @@ class Traceroute(object):
         self.hops = []
         self.country = country
 
+        # Localhost Specific operations happen here
         if self.country == 'LO':
             self.local_mode = True
             self.pub_ip     = self._lookup_public_ip()
@@ -53,8 +54,9 @@ class Traceroute(object):
             self.local_mode = False
 
 
+        # Store start/end times of the traceroute process
         self.probe_start = time.time() * 1000
-        self._run_traceroute()
+        self._run_traceroute() 
         self.probe_end   = time.time() * 1000
 
     def _run_traceroute(self):
@@ -90,60 +92,6 @@ class Traceroute(object):
             self.hops = self._get_geocoded_hops()
 
         self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
-
-    def get_report(self):
-        report = {}
-
-        report['hops']        = self.hops
-        report['probe_start'] = self.probe_start
-        report['probe_end']   = self.probe_end
-        if self.local_mode:
-            report['pub_ip'] = self.pub_ip
-            report['ifaces'] = self.ifaces
-            report['routes'] = self.routes 
-        
-        return report
-
-    def _lookup_public_ip(self):
-
-        #TODO Don't forget to put timeout from above here....
-        response = requests.get('https://api.ipify.org?format=json')
-
-        if response.status_code == 200:
-            ip_data = response.json()
-            if 'ip' not in ip_data.keys():
-                return 'Unable to determine IP'
-            else:
-                return  ip_data['ip']
-        else:
-            return 'Unable to determine IP'
-
-    def _get_network_interface_info(self):
-        iface_list = []
-        for i in netifaces.interfaces():
-           addr = netifaces.ifaddresses(i)
-
-           try:
-               iface_list.append( {i : { 
-                    'ip_address' : addr[netifaces.AF_INET][0]['addr'],
-                    'mac'        : addr[netifaces.AF_LINK][0]['addr']
-               }})
-           except KeyError,e:
-               self.print_debug("Key not found - _get_network_interface_info - {}".format(addr))
-
-        return iface_list
-
-
-    def _get_network_routes(self):
-        routes = []
-
-        gw = netifaces.gateways()
-        if 'default' in gw.keys():
-            routes.append( {
-                'default' : gw['default'][netifaces.AF_INET]
-            })
-
-        return routes
 
 
     def get_traceroute_output(self):
@@ -271,6 +219,59 @@ class Traceroute(object):
             self.print_debug(str(err))
         return (returncode, stdout)
 
+    def _lookup_public_ip(self):
+        """
+        Retrieve public IP of this instance by calling ipify webservice
+        """
+
+        response = requests.get('https://api.ipify.org?format=json', timeout=self.timeout)
+
+        if response.status_code == 200:
+            ip_data = response.json()
+            if 'ip' not in ip_data.keys():
+                return 'Unable to determine IP'
+            else:
+                return  ip_data['ip']
+        else:
+            return 'Unable to determine IP'
+
+    def _get_network_interface_info(self):
+        """
+        Private method. 
+        Gather list of active interfaces  - localhost mode only. 
+        """
+        iface_list = []
+        for i in netifaces.interfaces():
+           addr = netifaces.ifaddresses(i)
+
+
+           # clumsy way to filter which interfaces get added to list. If these elements raise KeyErrors, we skip
+           try:
+               iface_list.append( {i : { 
+                    'ip_address' : addr[netifaces.AF_INET][0]['addr'],
+                    'mac'        : addr[netifaces.AF_LINK][0]['addr']
+               }})
+           except KeyError,e:
+               self.print_debug("Key not found - _get_network_interface_info - {}".format(addr))
+
+        return iface_list
+
+
+    def _get_network_routes(self):
+        """
+        Gather network routes on localhost. Only grabs default gateway. Need to play around on different hosts to see what output
+        should be
+        """
+        routes = []
+
+        gw = netifaces.gateways()
+        if 'default' in gw.keys():
+            routes.append( {
+                'default' : gw['default'][netifaces.AF_INET]
+            })
+
+        return routes
+
     def urlopen(self, url, context=None):
         """
         Fetches webpage.
@@ -329,8 +330,23 @@ class Traceroute(object):
         if self.debug:
             print("[DEBUG {}] {}".format(datetime.datetime.now(), msg))
 
+    def get_report(self):
+        report = {}
+
+        report['hops']        = self.hops
+        report['probe_start'] = self.probe_start
+        report['probe_end']   = self.probe_end
+        if self.local_mode:
+            report['pub_ip'] = self.pub_ip
+            report['ifaces'] = self.ifaces
+            report['routes'] = self.routes 
+        
+        return report
 
 def post_result(webhook_url, report, timeout=120):
+    """
+    POST  traceroute report to specified website. Exceptions need to be caught in the caller
+    """
     return requests.post(webhook_url, data=json.dumps(report), timeout=timeout)
 
 
@@ -381,11 +397,15 @@ def main():
                             timeout=options.timeout,
                             debug=options.debug)
 
+    # pull complete report -> Hop data plus meta info about the network
     report = traceroute.get_report()
 
     if options.webhook != "":
-        status_code = post_result(options.webhook, report, options.timeout)
-        print "Status code {}".format(status_code)
+        try:
+            result = post_result(options.webhook, report, options.timeout)
+            print "Webhook POST Result: {}".format(result)
+        except Exception,e:
+            print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
     else:
         print(json.dumps(report, indent=4))
     return 0

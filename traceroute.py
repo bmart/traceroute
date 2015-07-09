@@ -22,7 +22,6 @@ import time
 USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
 
 
-
 class Traceroute(object):
     """
     Multi-source traceroute instance.
@@ -331,6 +330,10 @@ class Traceroute(object):
             print("[DEBUG {}] {}".format(datetime.datetime.now(), msg))
 
 
+def post_result(webhook_url, report, timeout=120):
+    return requests.post(webhook_url, data=json.dumps(report), timeout=timeout)
+
+
 def main():
     cmdparser = optparse.OptionParser("%prog --ip_address=IP_ADDRESS")
     cmdparser.add_option(
@@ -360,6 +363,10 @@ def main():
         "-d", "--debug", action="store_true", default=False,
         help="Show debug output (default: False)")
 
+    cmdparser.add_option(
+        "-w", "--webhook", type="string", default="",
+        help="Specify URL to POST report payload rather than stdout")
+
     options, _  = cmdparser.parse_args()
     json_file   = open(options.json_file, "r").read()
     sources     = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
@@ -373,19 +380,14 @@ def main():
                             no_geo=options.no_geo,
                             timeout=options.timeout,
                             debug=options.debug)
-    """
-        Pseudo-Code
 
-        report = traceroute.get_report()
-
-        print(json.dumps(report, indent=4)
-
-    """
-
-    
     report = traceroute.get_report()
 
-    print(json.dumps(report, indent=4))
+    if options.webhook != "":
+        status_code = post_result(options.webhook, report, options.timeout)
+        print "Status code {}".format(status_code)
+    else:
+        print(json.dumps(report, indent=4))
     return 0
 
 

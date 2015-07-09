@@ -47,19 +47,19 @@ class Traceroute(object):
         # Localhost Specific operations happen here
         if self.country == 'LO':
             self.local_mode = True
-            self.pub_ip     = self._lookup_public_ip()
-            self.ifaces     = self._get_network_interface_info()
-            self.routes     = self._get_network_routes()
+            self.pub_ip     = self.__lookup_public_ip()
+            self.ifaces     = self.__get_network_interface_info()
+            self.routes     = self.__get_network_routes()
         else:
             self.local_mode = False
 
 
         # Store start/end times of the traceroute process
         self.probe_start = time.time() * 1000
-        self._run_traceroute() 
+        self.__run_traceroute() 
         self.probe_end   = time.time() * 1000
 
-    def _run_traceroute(self):
+    def __run_traceroute(self):
         """
         Instead of running the actual traceroute command, we will fetch
         standard traceroute results from several publicly available webpages
@@ -82,14 +82,14 @@ class Traceroute(object):
         traceroute = open(filepath, "r").read()
 
         # hop_num, hosts
-        hops = self._get_hops(traceroute)
+        hops = self.__get_hops(traceroute)
 
         # hop_num, hostname, ip_address, rtt
-        self.hops = self._get_formatted_hops()
+        self.hops = self.__get_formatted_hops()
 
         if not self.no_geo:
             # hop_num, hostname, ip_address, rtt, latitude, longitude
-            self.hops = self._get_geocoded_hops()
+            self.hops = self.__get_geocoded_hops()
 
         self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
 
@@ -117,7 +117,7 @@ class Traceroute(object):
 
     
 
-    def _get_hops(self, traceroute):
+    def __get_hops(self, traceroute):
         """
         Returns hops from traceroute output in an array of dicts each
         with hop number and the associated hosts data.
@@ -136,7 +136,7 @@ class Traceroute(object):
             self.print_debug(hop)
             self.hops.append(hop)
 
-    def _get_formatted_hops(self):
+    def __get_formatted_hops(self):
         """
         Hosts data from get_hops() is represented in a single string.
         We use this function to better represent the hosts data in a dict.
@@ -161,7 +161,7 @@ class Traceroute(object):
         return formatted_hops
 
 
-    def _get_geocoded_hops(self):
+    def __get_geocoded_hops(self):
         """
         Returns hops from get_formatted_hops() with geolocation information
         for each hop.
@@ -219,7 +219,7 @@ class Traceroute(object):
             self.print_debug(str(err))
         return (returncode, stdout)
 
-    def _lookup_public_ip(self):
+    def __lookup_public_ip(self):
         """
         Retrieve public IP of this instance by calling ipify webservice
         """
@@ -235,7 +235,7 @@ class Traceroute(object):
         else:
             return 'Unable to determine IP'
 
-    def _get_network_interface_info(self):
+    def __get_network_interface_info(self):
         """
         Private method. 
         Gather list of active interfaces  - localhost mode only. 
@@ -257,7 +257,7 @@ class Traceroute(object):
         return iface_list
 
 
-    def _get_network_routes(self):
+    def __get_network_routes(self):
         """
         Gather network routes on localhost. Only grabs default gateway. Need to play around on different hosts to see what output
         should be

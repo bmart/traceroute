@@ -91,7 +91,7 @@ class Traceroute(object):
             # hop_num, hostname, ip_address, rtt, latitude, longitude
             self.hops = self.__get_geocoded_hops()
 
-        self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
+        #self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
 
 
     def get_traceroute_output(self):

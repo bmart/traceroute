@@ -81,6 +81,7 @@ class Traceroute(object):
             open(filepath, "w").write(traceroute)
         traceroute = open(filepath, "r").read()
 
+        self.raw_string = traceroute 
         self.__get_hops(traceroute)
 
 
@@ -128,9 +129,9 @@ class Traceroute(object):
         #hop_pattern = '^(?P<hop_num>\w+)\s+(?P<hosts>.*)'
         hop_pattern = '^(?P<hop_num>[0-9]+)\s+(?P<hosts>.*)'
         # This matches hosts which are ip or dns mapped 
-        host_pattern = '([\d\w.]+\s+\(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\)\s+\d+\.\d+ ms)'
+        host_pattern = '([\d\w.-]+\s+\(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\)\s+\d+\.\d+ ms)'
         # This is essentially the same as the previous pattern but breaks into usable chunks
-        hop_element_pattern = '([\d\w.]+)\s+\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)\s+(\d+\.\d+ ms)'
+        hop_element_pattern = '([\d\w.-]+)\s+\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)\s+(\d+\.\d+ ms)'
         hp  = re.compile(hop_element_pattern)
 
         for entry in traceroute.split('\n'):
@@ -143,6 +144,7 @@ class Traceroute(object):
             hop_num     = int(hop['hop_num'])
            
             hop_hosts   = re.findall(host_pattern, hop['hosts'])
+
             self.hops[hop_num] = []
             for host in hop_hosts:
                 m = hp.search(host)
@@ -165,6 +167,14 @@ class Traceroute(object):
                                 'rtt'        : ping_time,
                                 'latitude'   : location['latitude'],
                                 'longitude'  : location['longitude']
+                            }
+                        )
+                    else:
+                        self.hops[hop_num].append(
+                            { 
+                                'hostname'   : hostname,
+                                'ip_address' : ip,
+                                'rtt'        : ping_time
                             }
                         )
                         
@@ -339,6 +349,8 @@ class Traceroute(object):
             report['pub_ip'] = self.pub_ip
             report['ifaces'] = self.ifaces
             report['routes'] = self.routes 
+
+        report['raw']       = self.raw_string
         
         return report
 

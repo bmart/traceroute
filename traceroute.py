@@ -41,7 +41,7 @@ class Traceroute(object):
         self.timeout = timeout
         self.debug = debug
         self.locations = {}
-        self.hops = []
+        self.hops = {}
         self.country = country
 
         # Localhost Specific operations happen here
@@ -81,15 +81,11 @@ class Traceroute(object):
             open(filepath, "w").write(traceroute)
         traceroute = open(filepath, "r").read()
 
-        # hop_num, hosts
-        hops = self.__get_hops(traceroute)
+        self.__get_hops(traceroute)
 
-        # hop_num, hostname, ip_address, rtt
-        self.hops = self.__get_formatted_hops()
 
-        if not self.no_geo:
-            # hop_num, hostname, ip_address, rtt, latitude, longitude
-            self.hops = self.__get_geocoded_hops()
+        #if not self.no_geo:
+        #    self.__get_geocoded_hops()
 
         #self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
 
@@ -121,70 +117,73 @@ class Traceroute(object):
         """
         Returns hops from traceroute output in an array of dicts each
         with hop number and the associated hosts data.
-        """
-        regex = r'^(?P<hop_num>\d+)(?P<hosts>.*?)$'
-        lines = traceroute.split("\n")
-        for line in lines:
-            line = line.strip()
-            hop = {}
-            if not line:
-                continue
-            try:
-                hop = re.match(regex, line).groupdict()
-            except AttributeError:
-                continue
-            self.print_debug(hop)
-            self.hops.append(hop)
-
-    def __get_formatted_hops(self):
-        """
-        Hosts data from get_hops() is represented in a single string.
-        We use this function to better represent the hosts data in a dict.
-        """
-        formatted_hops = []
-        regex = r'(?P<h>[\w.-]+) \((?P<i>[\d.]+)\) (?P<r>\d{1,4}.\d{1,4} ms)'
-        for hop in self.hops:
-            hop_num = int(hop['hop_num'].strip())
-            hosts = hop['hosts'].replace("  ", " ").strip()
-            # Using re.findall(), we split the hosts, then for each host,
-            # we store a tuple of hostname, IP address and the first RTT.
-            hosts = re.findall(regex, hosts)
-            for host in hosts:
                 hop_context = {
                     'hop_num': hop_num,
                     'hostname': host[0],
                     'ip_address': host[1],
                     'rtt': host[2],
                 }
-                self.print_debug(hop_context)
-                formatted_hops.append(hop_context)
-        return formatted_hops
+        """
+        # This breaks up the line into hop num => host data
+        #hop_pattern = '^(?P<hop_num>\w+)\s+(?P<hosts>.*)'
+        hop_pattern = '^(?P<hop_num>[0-9]+)\s+(?P<hosts>.*)'
+        # This matches hosts which are ip or dns mapped 
+        host_pattern = '([\d\w.]+\s+\(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\)\s+\d+\.\d+ ms)'
+        # This is essentially the same as the previous pattern but breaks into usable chunks
+        hop_element_pattern = '([\d\w.]+)\s+\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)\s+(\d+\.\d+ ms)'
+        hp  = re.compile(hop_element_pattern)
+
+        for entry in traceroute.split('\n'):
+            entry = entry.strip()
+            result = re.match(hop_pattern,entry)
+
+            if result is None: # should only fail on first line
+                continue
+            hop         = result.groupdict()
+            hop_num     = int(hop['hop_num'])
+           
+            hop_hosts   = re.findall(host_pattern, hop['hosts'])
+            self.hops[hop_num] = []
+            for host in hop_hosts:
+                m = hp.search(host)
+                (hostname, ip, ping_time) = m.groups()
+                if self.no_geo:
+                    self.hops[hop_num].append(
+                        { 
+                            'hostname'   : hostname,
+                            'ip_address' : ip,
+                            'rtt'        : ping_time
+                        }
+                    )
+                else:
+                    location = self.__get_geocoded_data(ip)
+                    if location:
+                        self.hops[hop_num].append(
+                            { 
+                                'hostname'   : hostname,
+                                'ip_address' : ip,
+                                'rtt'        : ping_time,
+                                'latitude'   : location['latitude'],
+                                'longitude'  : location['longitude']
+                            }
+                        )
+                        
 
 
-    def __get_geocoded_hops(self):
+
+    def __get_geocoded_data(self, ip_address):
         """
-        Returns hops from get_formatted_hops() with geolocation information
-        for each hop.
+            Returns a location hash with long/lat for a particular IP address
         """
-        geocoded_hops = []
-        for hop in self.hops:
-            ip_address = hop['ip_address']
-            location = None
-            if ip_address in self.locations:
-                location = self.locations[ip_address]
-            else:
-                location = self.get_location(ip_address)
-                self.locations[ip_address] = location
-            if location:
-                geocoded_hops.append({
-                    'hop_num': hop['hop_num'],
-                    'hostname': hop['hostname'],
-                    'ip_address': hop['ip_address'],
-                    'rtt': hop['rtt'],
-                    'latitude': location['latitude'],
-                    'longitude': location['longitude'],
-                })
-        return geocoded_hops
+        location = None
+        if ip_address in self.locations:
+            location = self.locations[ip_address]
+        else:
+            location = self.get_location(ip_address)
+            self.locations[ip_address] = location
+        
+        return location
+
 
     def get_location(self, ip_address):
         """

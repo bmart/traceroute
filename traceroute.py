@@ -349,8 +349,8 @@ class Traceroute(object):
             report['pub_ip'] = self.pub_ip
             report['ifaces'] = self.ifaces
             report['routes'] = self.routes 
-
-        report['raw']       = self.raw_string
+        if self.debug:
+            report['raw']       = self.raw_string
         
         return report
 
@@ -370,7 +370,7 @@ def main():
         "-j", "--json_file", type="string", default="sources.json",
         help="List of sources in JSON file (default: sources.json)")
     cmdparser.add_option(
-        "-c", "--country", type="choice", default="US",
+        "-c", "--country", type="choice", default="LO",
         choices=["LO", "BY", "CH", "JP", "RU", "UK", "US"],
         help=("Traceroute will be initiated from this country; choose 'LO' "
               "for localhost to run traceroute locally, 'BY' for Belarus, "

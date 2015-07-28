@@ -27,7 +27,7 @@ class Traceroute(object):
     Multi-source traceroute instance.
     """
     def __init__(self, ip_address, source=None, country="US", tmp_dir="/tmp",
-                 no_geo=False, timeout=120, debug=False):
+                 no_geo=False, timeout=120, debug=False, max_latency=5):
         super(Traceroute, self).__init__()
         self.ip_address = ip_address
         self.source = source
@@ -37,12 +37,18 @@ class Traceroute(object):
             self.source = sources[country]
         self.tmp_dir = tmp_dir
 
+        self.LATENCY_THRESHOLD = float(max_latency)
+    
+
         self.no_geo = no_geo
         self.timeout = timeout
         self.debug = debug
         self.locations = {}
         self.hops = {}
         self.country = country
+
+        # flag to determine if webhook alert is warranted
+        self.latency_exceeded = False
 
         # Localhost Specific operations happen here
         if self.country == 'LO':
@@ -58,6 +64,11 @@ class Traceroute(object):
         self.probe_start = time.time() * 1000
         self.__run_traceroute() 
         self.probe_end   = time.time() * 1000
+
+    def pingLatencyThresholdExceeded(self):
+        """public method to query state of Traceroute calls"""
+
+        return self.latency_exceeded
 
     def __run_traceroute(self):
         """
@@ -134,6 +145,7 @@ class Traceroute(object):
         hop_element_pattern = '([\d\w.-]+)\s+\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)\s+(\d+\.\d+ ms)'
         hp  = re.compile(hop_element_pattern)
 
+        alertTriggered = False
         for entry in traceroute.split('\n'):
             entry = entry.strip()
             result = re.match(hop_pattern,entry)
@@ -146,9 +158,17 @@ class Traceroute(object):
             hop_hosts   = re.findall(host_pattern, hop['hosts'])
 
             self.hops[hop_num] = []
+            
             for host in hop_hosts:
                 m = hp.search(host)
                 (hostname, ip, ping_time) = m.groups()
+                
+                # Check ping time to see if it exceeds threshold. Once one is found, don't need any more info from other hops
+                if alertTriggered is False:
+                    if self._exceeds_hop_latency(ping_time):
+                        self.latency_exceeded   = True
+                        alertTriggered          = True
+
                 if self.no_geo:
                     self.hops[hop_num].append(
                         { 
@@ -207,6 +227,15 @@ class Traceroute(object):
             if 'latitude' in tmp_location and 'longitude' in tmp_location:
                 location = tmp_location
         return location
+    def _exceeds_hop_latency(self,ping_time):
+        """return true if hop time exceeds specified latency threshold"""
+        # remote ' ms' from ping time
+        ping_as_float = float(ping_time.replace(" ms",""))
+        return ping_as_float >= self.LATENCY_THRESHOLD
+
+
+
+
 
     def execute_cmd(self, cmd):
         """
@@ -360,6 +389,18 @@ def post_result(webhook_url, report, timeout=120):
     """
     return requests.post(webhook_url, data=json.dumps(report), timeout=timeout)
 
+def webhook_available(webhook_url):
+    """ 
+    Function to check if a webhook host is responding.
+    Not 100% sure this will work...
+    """
+    try:
+        data = urllib.urlopen(webhook_url)
+        return True
+    except Exception,e:
+        return False
+
+
 
 def main():
     cmdparser = optparse.OptionParser("%prog --ip_address=IP_ADDRESS")
@@ -393,6 +434,11 @@ def main():
     cmdparser.add_option(
         "-w", "--webhook", type="string", default="",
         help="Specify URL to POST report payload rather than stdout")
+    
+    cmdparser.add_option(
+        "--max_latency", type="int", default="5",
+        help="Maximum latency whereby the system will trigger the webhook ( if requested ). ")
+    
 
     options, _  = cmdparser.parse_args()
     json_file   = open(options.json_file, "r").read()
@@ -406,17 +452,32 @@ def main():
                             tmp_dir=options.tmp_dir,
                             no_geo=options.no_geo,
                             timeout=options.timeout,
-                            debug=options.debug)
+                            debug=options.debug, max_latency = options.max_latency)
 
     # pull complete report -> Hop data plus meta info about the network
     report = traceroute.get_report()
 
+
+ 
+
     if options.webhook != "":
-        try:
-            result = post_result(options.webhook, report, options.timeout)
-            print "Webhook POST Result: {}".format(result)
-        except Exception,e:
-            print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
+        # check if remote host is available
+        if webhook_available(options.webhook):
+
+            # if available, check if there are any outstanding reports that should be sent
+            # if traceroute::backlog == true => Purge results
+            
+            if traceroute.pingLatencyThresholdExceeded():
+                try:
+                    result = post_result(options.webhook, report, options.timeout)
+                    print "Webhook POST Result: {}".format(result)
+                except Exception,e:
+                    print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
+        else:
+            print "Webhook unavailable, caching"
+            pass
+            # Dump Result into Redis
+            # Set redis flag traceroute::backlog => true
     else:
         print(json.dumps(report, indent=4))
     return 0

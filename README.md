@@ -5,8 +5,22 @@ Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](
 
 ## Installation
 
-1. Install dependencies listed in requirements.txt file. Pip is recommended. You could also use virtualenv to keep things isolated.
-2. Save traceroute.py into a directory with its path stored in your PYTHONPATH environment variable. (if using virtualenv, copy it here)
+1. Create a project root directory (proj_root herein) for the traceroute scripts to live. The init-script assumes /var/lib/python/traceroute. 
+   The source can be cloned here.  This directory can be changed by editing init-script/traceroute.
+2. Inside the proj_root directory , initialize a virtual environment to house python and the projects dependencies. Call the environment directory 'env'. 
+3. Install dependencies listed in requirements.txt file. This can be done by activating the virtualenv in step 2 and running pip install -r requirements.txt
+4. Copy 'traceroute.sh' from init-script into the project root dir (/var/lib/python/traceroute). Or create a symbolic link. At the end it should look like:
+     bmartin@crappy-laptop:/var/lib/python/traceroute$ ls
+     env  init-script  LICENSE  persistence.json  README.md  requirements.txt  screenshot.png  sources.json  traceroute.py  traceroute.sh
+
+5. Copy 'traceroute' from init-script into the /etc/init.d folder. 
+6. If Debian - Run the command: (tbd)
+
+    rc-update-d traceroute defaults
+
+    
+
+7. If Centos - ....tbd
 
 
 ## Usage

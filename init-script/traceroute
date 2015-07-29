@@ -6,10 +6,10 @@
 
 DAEMON_PATH="/var/lib/python/traceroute"
 
-DAEMON=traceroute.sh
+DAEMON=$DAEMON_PATH/traceroute.sh
 DAEMONOPTS=""
 
-NAME=traceroute.py
+NAME=traceroute.sh
 DESC="Traceroute Python Tool"
 PIDFILE=/var/run/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME

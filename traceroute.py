@@ -18,9 +18,12 @@ from subprocess import Popen, PIPE
 import requests
 import netifaces
 import time
+from tinydb import TinyDB, where
 
 USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
 
+DB_FILE        = "./persistence.json"
+WEBHOOK_OFFLINE = "webhook_offline"
 
 class Traceroute(object):
     """
@@ -383,6 +386,13 @@ class Traceroute(object):
         
         return report
 
+
+############################################################################################
+#
+#  Utility Functions For Reporting and Command-line Usage.
+#
+############################################################################################
+
 def post_result(webhook_url, report, timeout=120):
     """
     POST  traceroute report to specified website. Exceptions need to be caught in the caller
@@ -399,6 +409,32 @@ def webhook_available(webhook_url):
         return True
     except Exception,e:
         return False
+
+
+def cacheFull(webhook_cache):
+    """check if cache contains webhook records"""
+    
+    return webhook_cache.__len__() > 0
+
+def purgeAndDeleteCache(webhook_cache, url):
+    """cycle through db, post results and delete db.
+       TODO - only delete successful posts. Figure out later. 
+    """
+    
+    totalRecords = webhook_cache.__len__() # not used currently. 
+    print "Now posting offline cache"
+    for data in webhook_cache.all():
+        try:
+            result = post_result(url, data) 
+        except Exception,e:
+            print "Unable to post record from cache. Message was: {0}".format(e)
+    # clear cache 
+    webhook_cache.purge()
+    print "Webhook cache cleared"
+
+
+
+    
 
 
 
@@ -444,6 +480,8 @@ def main():
     json_file   = open(options.json_file, "r").read()
     sources     = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
 
+    db            = TinyDB(DB_FILE)
+    webhook_cache = db.table(WEBHOOK_OFFLINE)
 
     # Get Hope info using Traceroute Object
     traceroute  = Traceroute(ip_address=options.ip_address,
@@ -466,6 +504,9 @@ def main():
 
             # if available, check if there are any outstanding reports that should be sent
             # if traceroute::backlog == true => Purge results
+
+            if cacheFull(webhook_cache):
+                purgeAndDeleteCache(webhook_cache, options.webhook)
             
             if traceroute.pingLatencyThresholdExceeded():
                 try:
@@ -475,7 +516,9 @@ def main():
                     print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
         else:
             print "Webhook unavailable, caching"
-            pass
+            if traceroute.pingLatencyThresholdExceeded():
+                #cache results until data is restored
+                webhook_cache.insert(report)
             # Dump Result into Redis
             # Set redis flag traceroute::backlog => true
     else:

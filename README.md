@@ -3,6 +3,14 @@ Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](
 
 ![Using output from traceroute.py to plot hops on Google Map](https://raw.github.com/ayeowch/traceroute/master/screenshot.png)
 
+## Prerequisites
+
+1. python2.7
+2. pip
+3. virtualenv
+4. traceroute (commandline version)
+5. Might need to ensure you have gcc and python dev modules for your distribution
+
 ## Installation
 
 1. Create a project root directory (proj_root herein) for the traceroute scripts to live. The init-script assumes /var/lib/python/traceroute. 
@@ -13,14 +21,17 @@ Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](
      bmartin@crappy-laptop:/var/lib/python/traceroute$ ls
      env  init-script  LICENSE  persistence.json  README.md  requirements.txt  screenshot.png  sources.json  traceroute.py  traceroute.sh
 
-5. Copy 'traceroute' from init-script into the /etc/init.d folder. 
+5. Copy 'traceroute' from init-script into the /etc/init.d folder. Ensure to make the traceroute script executable.
 6. If Debian - Run the command: (tbd)
 
-    rc-update-d traceroute defaults
+    update-rc-d traceroute defaults
+    (might see some complaints)
 
-    
+7. If Centos, run this:
+    chkconfig --level 35 traceroute on
 
-7. If Centos - ....tbd
+8. For a quick test, run 
+    /etc/init.d/traceroute start
 
 
 ## Usage

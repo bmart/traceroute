@@ -80,9 +80,9 @@ class Traceroute(object):
         that are listed at traceroute.org. For each hop, we will then attach
         geolocation information to it.
         """
-        self.print_debug("ip_address={}".format(self.ip_address))
+        self.print_debug("ip_address={0}".format(self.ip_address))
 
-        filename = "{}.{}.txt".format(self.ip_address, self.country)
+        filename = "{0}.{1}.txt".format(self.ip_address, self.country)
         filepath = os.path.join(self.tmp_dir, filename)
 
         if not os.path.exists(filepath):
@@ -122,7 +122,7 @@ class Traceroute(object):
             traceroute = re.findall(pattern, content)[0].strip()
         except IndexError:
             # Manually append closing </pre> for partially downloaded page
-            content = "{}</pre>".format(content)
+            content = "{0}</pre>".format(content)
             traceroute = re.findall(pattern, content)[0].strip()
         return (status_code, traceroute)
 
@@ -223,7 +223,7 @@ class Traceroute(object):
         Returns geolocation information for the given IP address.
         """
         location = None
-        url = "http://dazzlepod.com/ip/{}.json".format(ip_address)
+        url = "http://dazzlepod.com/ip/{0}.json".format(ip_address)
         status_code, json_data = self.urlopen(url)
         if status_code == 200 and json_data:
             tmp_location = json.loads(json_data)
@@ -234,6 +234,8 @@ class Traceroute(object):
         """return true if hop time exceeds specified latency threshold"""
         # remote ' ms' from ping time
         ping_as_float = float(ping_time.replace(" ms",""))
+	print "Compare {0} to {1}".format(ping_as_float, self.LATENCY_THRESHOLD)
+
         return ping_as_float >= self.LATENCY_THRESHOLD
 
 
@@ -252,9 +254,9 @@ class Traceroute(object):
             signal.alarm(self.timeout)
             stdout, stderr = process.communicate()
             returncode = process.returncode
-            self.print_debug("cmd={}, returncode={}".format(cmd, returncode))
+            self.print_debug("cmd={0}, returncode={1}".format(cmd, returncode))
             if returncode != 0:
-                self.print_debug("stderr={}".format(stderr))
+                self.print_debug("stderr={0}".format(stderr))
             signal.alarm(0)
         except Exception as err:
             self.print_debug(str(err))
@@ -293,7 +295,8 @@ class Traceroute(object):
                     'mac'        : addr[netifaces.AF_LINK][0]['addr']
                }})
            except KeyError,e:
-               self.print_debug("Key not found - _get_network_interface_info - {}".format(addr))
+	       pass
+               self.print_debug("Key not found - _get_network_interface_info - {0}".format(addr))
 
         return iface_list
 
@@ -326,7 +329,7 @@ class Traceroute(object):
         content = ""
         try:
             response = urllib2.urlopen(request)
-            self.print_debug("url={}".format(response.geturl()))
+            self.print_debug("url={0}".format(response.geturl()))
             content = self.chunked_read(response)
         except urllib2.HTTPError as err:
             status_code = err.code
@@ -352,7 +355,7 @@ class Traceroute(object):
                     break
                 content += data
                 read_bytes += bytes_per_read
-                self.print_debug("read_bytes={}, {}".format(read_bytes, data))
+                self.print_debug("read_bytes={0}, {1}".format(read_bytes, data))
             signal.alarm(0)
         except Exception as err:
             self.print_debug(str(err))
@@ -362,14 +365,14 @@ class Traceroute(object):
         """
         Raises exception when signal is caught.
         """
-        raise Exception("Caught signal {}".format(signum))
+        raise Exception("Caught signal {0}".format(signum))
 
     def print_debug(self, msg):
         """
         Prints debug message to standard output.
         """
         if self.debug:
-            print("[DEBUG {}] {}".format(datetime.datetime.now(), msg))
+            print("[DEBUG {0}] {1}".format(datetime.datetime.now(), msg))
 
     def get_report(self):
         report = {}
@@ -511,7 +514,7 @@ def main():
             if traceroute.pingLatencyThresholdExceeded():
                 try:
                     result = post_result(options.webhook, report, options.timeout)
-                    print "Webhook POST Result: {}".format(result)
+                    print "Webhook POST Result: {0}".format(result)
                 except Exception,e:
                     print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
         else:

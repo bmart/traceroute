@@ -305,11 +305,30 @@ class Traceroute(object):
         """
         routes = []
 
-        gw = netifaces.gateways()
-        if 'default' in gw.keys():
-            routes.append( {
-                'default' : gw['default'][netifaces.AF_INET]
-            })
+        gws = netifaces.gateways()
+        for k in gws.keys():
+            if k == 'default':
+                continue
+
+            if len(gws[k]) == 1:
+                (ip,interface,is_gateway) = gws[k][0]
+
+                if is_gateway:
+                    gw_name = 'default'
+                else: # just use the index value from netifaces
+                    gw_name = "{0}".format(k)
+
+                routes.append({
+                       gw_name : {
+                            'ip_address' : ip,
+                            'interface'  : interface
+                       }
+                
+                    }
+                )
+            else:
+                print "Error interpretting network routes. check netifaces output"
+
 
         return routes
 

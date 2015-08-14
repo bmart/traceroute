@@ -36,8 +36,8 @@ hops_table          = db.table("hop_hosts")
 
 
 class Thresholds(object):
-    HOP_DIFFERENCE_THRESHOLD    = 5
-    LATENCY_THRESHOLD           = 5
+    HOP_DIFFERENCE_THRESHOLD    = 20
+    LATENCY_THRESHOLD           = 20
 
 
 
@@ -91,18 +91,18 @@ class Traceroute(object):
         """
         self.print_debug("ip_address={}".format(self.ip_address))
 
-        filename = "{}.{}.txt".format(self.ip_address, self.country)
-        filepath = os.path.join(self.tmp_dir, filename)
+        # argh! removing cache for now
+        #filename = "{}.{}.txt".format(self.ip_address, self.country)
+        #filepath = os.path.join(self.tmp_dir, filename)
 
-        if not os.path.exists(filepath):
-            if self.country == "LO":
-                status_code, traceroute = self.execute_cmd(self.source['url'])
-            else:
-                status_code, traceroute = self.get_traceroute_output()
-            if status_code != 0 and status_code != 200:
-                return {'error': status_code}
-            open(filepath, "w").write(traceroute)
-        traceroute = open(filepath, "r").read()
+        if self.country == "LO":
+            status_code, traceroute = self.execute_cmd(self.source['url'])
+        else:
+            status_code, traceroute = self.get_traceroute_output()
+        if status_code != 0 and status_code != 200:
+            return {'error': status_code}
+        #open(filepath, "w").write(traceroute)
+        #traceroute = open(filepath, "r").read()
 
         self.raw_string = traceroute 
         self.__get_hops(traceroute)
@@ -471,13 +471,7 @@ def analyze_hop_history(hop_list):
 
     # Get previous hop results, or store some if non available
     if not hop_stats.all():
-        print "First run, populating hop_stats"
-        hop_stats.insert( { 'key' : 'num_hops', 'value' : len(hop_list) })
-
-        hops_table.purge()
-        for hop in hop_list:
-            for host in hop_list[hop]: 
-                hops_table.insert( { 'ip' : host['ip_address'], 'rtt' : host['rtt']})
+        cache_traceroute_hops(hop_list)
         return event_list 
         # implication here is to wait until next call before anything really happens
         # So max threshold isn't reported immediately if it occurs here
@@ -504,7 +498,7 @@ def analyze_hop_history(hop_list):
     if len(res) > 0: # not sure why this would be zero, but putting here. 
         prev_hop_count  = res[0]['value']
         if prev_hop_count != len(hop_list):
-            event_list[HOP_COUNT_KEY] = "Hop count changed from {0} to {1}".format(pre_hop_count, len(hop_list))
+            event_list[HOP_COUNT_KEY] = "Hop count changed from {0} to {1}".format(prev_hop_count, len(hop_list))
 
 
     # Hop differential comparison
@@ -515,18 +509,17 @@ def analyze_hop_history(hop_list):
             curRtt = get_ms_as_float(host['rtt'])
 
             prevRes = hops_table.search(where('ip') == curIp)
+
             if len(prevRes) > 0:
                 prevRes = prevRes[0] # just want element #1 - should only be 1 ?
                 prevRtt = get_ms_as_float(prevRes['rtt'])
-                print "Comparing Current: {0} to Previous: {1}".format(curRtt, prevRtt)
                 rttDiff = curRtt - prevRtt
-                print "rttDiff was {0}".format(rttDiff)
                 if abs(rttDiff) > Thresholds.HOP_DIFFERENCE_THRESHOLD:
                     if HOP_TIME_DIFF_KEY not in event_list.keys():
                         event_list[HOP_TIME_DIFF_KEY] = []
                     event_list[HOP_TIME_DIFF_KEY].append({
                         'oldHop' : prevRes,
-                        'newHop' : { 'host' : host, 'hop' : hop_list[hop] }
+                        'newHop' : host
                     })
     
 
@@ -545,7 +538,10 @@ def cache_traceroute_hops(hop_list):
     for hop in hop_list:
         for host in hop_list[hop]:
         #clear table just in case
-            hops_table.insert( { 'ip' : host['ip_address'], 'rtt' : host['rtt']})
+            obj = {
+                    'ip' : host['ip_address'], 'rtt' : host['rtt'], 'hostname' : host['hostname']
+            }
+            hops_table.insert(obj)
 
 
 def main():
@@ -582,8 +578,12 @@ def main():
         help="Specify URL to POST report payload rather than stdout")
     
     cmdparser.add_option(
-        "--max_latency", type="float", default="5",
+        "--max_latency", type="float", default="20",
         help="Maximum latency whereby the system will trigger the webhook ( if requested ). ")
+
+    cmdparser.add_option(
+        "--hop_time_diff", type="float", default="20",
+        help="If the time to reach a hop exceeds this value, trigger the webhook ( if requested ). ")
     
 
     options, _  = cmdparser.parse_args()
@@ -591,8 +591,8 @@ def main():
     sources     = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
 
 
-    # TODO - add hop diff to command-line
-    Thresholds.LATENCY_THRESHOLD = options.max_latency
+    Thresholds.LATENCY_THRESHOLD        = options.max_latency
+    Thresholds.HOP_DIFFERENCE_THRESHOLD = options.hop_time_diff
 
     # Get Hope info using Traceroute Object
     traceroute  = Traceroute(ip_address=options.ip_address,

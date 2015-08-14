@@ -20,17 +20,33 @@ import netifaces
 import time
 from tinydb import TinyDB, where
 
-USER_AGENT = "traceroute/1.0 (+https://github.com/ayeowch/traceroute)"
+USER_AGENT = "traceroute/1.0 (+https://github.com/bmart/traceroute)"
 
 DB_FILE        = "./persistence.json"
-WEBHOOK_OFFLINE = "webhook_offline"
+
+# global db reference
+db            = TinyDB(DB_FILE)
+
+# table references
+webhook_cache       = db.table("webhook_offline")
+hop_stats           = db.table("hop_stats")
+hops_table          = db.table("hop_hosts")
+
+# TODO set this via command-line 
+
+
+class Thresholds(object):
+    HOP_DIFFERENCE_THRESHOLD    = 5
+    LATENCY_THRESHOLD           = 5
+
+
 
 class Traceroute(object):
     """
     Multi-source traceroute instance.
     """
     def __init__(self, ip_address, source=None, country="US", tmp_dir="/tmp",
-                 no_geo=False, timeout=120, debug=False, max_latency=5):
+                 no_geo=False, timeout=120, debug=False):
         super(Traceroute, self).__init__()
         self.ip_address = ip_address
         self.source = source
@@ -40,7 +56,6 @@ class Traceroute(object):
             self.source = sources[country]
         self.tmp_dir = tmp_dir
 
-        self.LATENCY_THRESHOLD = float(max_latency)
     
 
         self.no_geo = no_geo
@@ -50,8 +65,6 @@ class Traceroute(object):
         self.hops = {}
         self.country = country
 
-        # flag to determine if webhook alert is warranted
-        self.latency_exceeded = False
 
         # Localhost Specific operations happen here
         if self.country == 'LO':
@@ -68,10 +81,6 @@ class Traceroute(object):
         self.__run_traceroute() 
         self.probe_end   = time.time() * 1000
 
-    def pingLatencyThresholdExceeded(self):
-        """public method to query state of Traceroute calls"""
-
-        return self.latency_exceeded
 
     def __run_traceroute(self):
         """
@@ -99,11 +108,10 @@ class Traceroute(object):
         self.__get_hops(traceroute)
 
 
-        #if not self.no_geo:
-        #    self.__get_geocoded_hops()
 
-        #self.hops = map(lambda h: {h.pop("hop_num") : h}, self.hops)
-
+    def get_hops(self):
+        """Return array of hop elements"""
+        return self.hops
 
     def get_traceroute_output(self):
         """
@@ -148,7 +156,6 @@ class Traceroute(object):
         hop_element_pattern = '([\d\w.-]+)\s+\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)\s+(\d+\.\d+ ms)'
         hp  = re.compile(hop_element_pattern)
 
-        alertTriggered = False
         for entry in traceroute.split('\n'):
             entry = entry.strip()
             result = re.match(hop_pattern,entry)
@@ -166,11 +173,6 @@ class Traceroute(object):
                 m = hp.search(host)
                 (hostname, ip, ping_time) = m.groups()
                 
-                # Check ping time to see if it exceeds threshold. Once one is found, don't need any more info from other hops
-                if alertTriggered is False:
-                    if self._exceeds_hop_latency(ping_time):
-                        self.latency_exceeded   = True
-                        alertTriggered          = True
 
                 if self.no_geo:
                     self.hops[hop_num].append(
@@ -230,11 +232,6 @@ class Traceroute(object):
             if 'latitude' in tmp_location and 'longitude' in tmp_location:
                 location = tmp_location
         return location
-    def _exceeds_hop_latency(self,ping_time):
-        """return true if hop time exceeds specified latency threshold"""
-        # remote ' ms' from ping time
-        ping_as_float = float(ping_time.replace(" ms",""))
-        return ping_as_float >= self.LATENCY_THRESHOLD
 
 
 
@@ -418,7 +415,7 @@ def post_result(webhook_url, report, timeout=120):
     """
     return requests.post(webhook_url, data=json.dumps(report), timeout=timeout)
 
-def webhook_available(webhook_url):
+def is_webhook_available(webhook_url):
     """ 
     Function to check if a webhook host is responding.
     Not 100% sure this will work...
@@ -451,10 +448,104 @@ def purgeAndDeleteCache(webhook_cache, url):
     webhook_cache.purge()
     print "Webhook cache cleared"
 
+def exceeds_hop_latency(ping_time):
+    """return true if hop time exceeds specified latency threshold"""
+    # remote ' ms' from ping time
+    ping_as_float = get_ms_as_float(ping_time)
+    return ping_as_float >= Thresholds.LATENCY_THRESHOLD
+
+def get_ms_as_float(ping_time):
+    return float(ping_time.replace(" ms",""))
+
+def analyze_hop_history(hop_list):
+    """
+    Analyze traceroute hop data for outstanding events. 
+    Store/compare hop data in tinydb for next iteration
+    Return an array of events or an empty array if none found
+
+    Likely move traceroute class outside of this driver script. 
+    """
+
+    event_list = {}
 
 
+    # Get previous hop results, or store some if non available
+    if not hop_stats.all():
+        print "First run, populating hop_stats"
+        hop_stats.insert( { 'key' : 'num_hops', 'value' : len(hop_list) })
+
+        hops_table.purge()
+        for hop in hop_list:
+            for host in hop_list[hop]: 
+                hops_table.insert( { 'ip' : host['ip_address'], 'rtt' : host['rtt']})
+        return event_list 
+        # implication here is to wait until next call before anything really happens
+        # So max threshold isn't reported immediately if it occurs here
+
+
+    # Hop Latency Exceptions
+    # Check for Hops in current list that exceed threshold
+    
+    # constants used in this function only
+    MAX_THRESH_KEY      = "max_threshold_exceeded"
+    HOP_COUNT_KEY       = "hop_count_change"
+    HOP_TIME_DIFF_KEY   = "hop_time_diff"
+
+    for hop in hop_list:
+        for host in hop_list[hop]:
+            if exceeds_hop_latency(host['rtt']):
+                if MAX_THRESH_KEY not in event_list.keys():
+                    event_list[MAX_THRESH_KEY] = []
+                event_list[MAX_THRESH_KEY].append(hop_list[hop])
+
+    # Total Hop Count Discrepancies
+    
+    res             = hop_stats.search(where('key') == 'num_hops')
+    if len(res) > 0: # not sure why this would be zero, but putting here. 
+        prev_hop_count  = res[0]['value']
+        if prev_hop_count != len(hop_list):
+            event_list[HOP_COUNT_KEY] = "Hop count changed from {0} to {1}".format(pre_hop_count, len(hop_list))
+
+
+    # Hop differential comparison
+
+    for hop in hop_list:
+        for host in hop_list[hop]:
+            curIp   = host['ip_address']
+            curRtt = get_ms_as_float(host['rtt'])
+
+            prevRes = hops_table.search(where('ip') == curIp)
+            if len(prevRes) > 0:
+                prevRes = prevRes[0] # just want element #1 - should only be 1 ?
+                prevRtt = get_ms_as_float(prevRes['rtt'])
+                print "Comparing Current: {0} to Previous: {1}".format(curRtt, prevRtt)
+                rttDiff = curRtt - prevRtt
+                print "rttDiff was {0}".format(rttDiff)
+                if abs(rttDiff) > Thresholds.HOP_DIFFERENCE_THRESHOLD:
+                    if HOP_TIME_DIFF_KEY not in event_list.keys():
+                        event_list[HOP_TIME_DIFF_KEY] = []
+                    event_list[HOP_TIME_DIFF_KEY].append({
+                        'oldHop' : prevRes,
+                        'newHop' : { 'host' : host, 'hop' : hop_list[hop] }
+                    })
     
 
+
+
+
+    return event_list
+
+def cache_traceroute_hops(hop_list):
+    """Store hop array in storage for next iteration comparisons"""
+
+    hop_stats.purge()
+    hop_stats.insert( { 'key' : 'num_hops', 'value' : len(hop_list) })
+    hops_table.purge()
+
+    for hop in hop_list:
+        for host in hop_list[hop]:
+        #clear table just in case
+            hops_table.insert( { 'ip' : host['ip_address'], 'rtt' : host['rtt']})
 
 
 def main():
@@ -491,7 +582,7 @@ def main():
         help="Specify URL to POST report payload rather than stdout")
     
     cmdparser.add_option(
-        "--max_latency", type="int", default="5",
+        "--max_latency", type="float", default="5",
         help="Maximum latency whereby the system will trigger the webhook ( if requested ). ")
     
 
@@ -499,8 +590,9 @@ def main():
     json_file   = open(options.json_file, "r").read()
     sources     = json.loads(json_file.replace("_IP_ADDRESS_", options.ip_address))
 
-    db            = TinyDB(DB_FILE)
-    webhook_cache = db.table(WEBHOOK_OFFLINE)
+
+    # TODO - add hop diff to command-line
+    Thresholds.LATENCY_THRESHOLD = options.max_latency
 
     # Get Hope info using Traceroute Object
     traceroute  = Traceroute(ip_address=options.ip_address,
@@ -509,37 +601,43 @@ def main():
                             tmp_dir=options.tmp_dir,
                             no_geo=options.no_geo,
                             timeout=options.timeout,
-                            debug=options.debug, max_latency = options.max_latency)
+                            debug=options.debug)
 
     # pull complete report -> Hop data plus meta info about the network
-    report = traceroute.get_report()
+    report   = traceroute.get_report()
 
-
- 
 
     if options.webhook != "":
-        # check if remote host is available
-        if webhook_available(options.webhook):
+        # If webhook is present, assume running in daemon/monitoring mode - analyze hops
+        # TODO should we introduce a parameter to designate the daemon/monitor mode
+        webhook_online = is_webhook_available(options.webhook)
 
-            # if available, check if there are any outstanding reports that should be sent
-            # if traceroute::backlog == true => Purge results
+        if cacheFull(webhook_cache) and webhook_online:
+              purgeAndDeleteCache(webhook_cache, options.webhook)
+        
+        event_list = analyze_hop_history(traceroute.get_hops())
 
-            if cacheFull(webhook_cache):
-                purgeAndDeleteCache(webhook_cache, options.webhook)
-            
-            if traceroute.pingLatencyThresholdExceeded():
+        # store current list for next time
+        cache_traceroute_hops(traceroute.get_hops())
+
+
+        if len(event_list) != 0:
+            # append section to report stating the issues or events leading to this alert
+            report['event_source'] = event_list
+
+            # check if remote host is available
+            if webhook_online:
+                
                 try:
                     result = post_result(options.webhook, report, options.timeout)
                     print "Webhook POST Result: {}".format(result)
+                    # TODO need to check that this value returns value HTTP code and cache result if invalid (404,501 etc)
                 except Exception,e:
                     print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
-        else:
-            print "Webhook unavailable, caching"
-            if traceroute.pingLatencyThresholdExceeded():
+            else:
+                print "Webhook unavailable, caching"
                 #cache results until data is restored
                 webhook_cache.insert(report)
-            # Dump Result into Redis
-            # Set redis flag traceroute::backlog => true
     else:
         print(json.dumps(report, indent=4))
     return 0

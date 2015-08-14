@@ -89,7 +89,7 @@ class Traceroute(object):
         that are listed at traceroute.org. For each hop, we will then attach
         geolocation information to it.
         """
-        self.print_debug("ip_address={}".format(self.ip_address))
+        self.print_debug("ip_address={0}".format(self.ip_address))
 
         # argh! removing cache for now
         #filename = "{}.{}.txt".format(self.ip_address, self.country)
@@ -130,7 +130,7 @@ class Traceroute(object):
             traceroute = re.findall(pattern, content)[0].strip()
         except IndexError:
             # Manually append closing </pre> for partially downloaded page
-            content = "{}</pre>".format(content)
+            content = "{0}</pre>".format(content)
             traceroute = re.findall(pattern, content)[0].strip()
         return (status_code, traceroute)
 
@@ -225,7 +225,7 @@ class Traceroute(object):
         Returns geolocation information for the given IP address.
         """
         location = None
-        url = "http://dazzlepod.com/ip/{}.json".format(ip_address)
+        url = "http://dazzlepod.com/ip/{0}.json".format(ip_address)
         status_code, json_data = self.urlopen(url)
         if status_code == 200 and json_data:
             tmp_location = json.loads(json_data)
@@ -249,9 +249,9 @@ class Traceroute(object):
             signal.alarm(self.timeout)
             stdout, stderr = process.communicate()
             returncode = process.returncode
-            self.print_debug("cmd={}, returncode={}".format(cmd, returncode))
+            self.print_debug("cmd={0}, returncode={1}".format(cmd, returncode))
             if returncode != 0:
-                self.print_debug("stderr={}".format(stderr))
+                self.print_debug("stderr={0}".format(stderr))
             signal.alarm(0)
         except Exception as err:
             self.print_debug(str(err))
@@ -290,15 +290,15 @@ class Traceroute(object):
                     'mac'        : addr[netifaces.AF_LINK][0]['addr']
                }})
            except KeyError,e:
-               self.print_debug("Key not found - _get_network_interface_info - {}".format(addr))
+	       pass
+               self.print_debug("Key not found - _get_network_interface_info - {0}".format(addr))
 
         return iface_list
 
 
     def __get_network_routes(self):
         """
-        Gather network routes on localhost. Only grabs default gateway. Need to play around on different hosts to see what output
-        should be
+        Gather routes from netifaces module
         """
         routes = []
 
@@ -307,25 +307,20 @@ class Traceroute(object):
             if k == 'default':
                 continue
 
-            if len(gws[k]) == 1:
-                (ip,interface,is_gateway) = gws[k][0]
+	    for r in gws[k]:
+                (ip,interface,is_gateway) = r
 
-                if is_gateway:
-                    gw_name = 'default'
-                else: # just use the index value from netifaces
-                    gw_name = "{0}".format(k)
+                gw_name = "{0}".format(netifaces.address_families[k])
 
                 routes.append({
                        gw_name : {
                             'ip_address' : ip,
-                            'interface'  : interface
+                            'interface'  : interface,
+			    'default'    : is_gateway
                        }
                 
                     }
                 )
-            else:
-                print "Error interpretting network routes. check netifaces output"
-
 
         return routes
 
@@ -342,7 +337,7 @@ class Traceroute(object):
         content = ""
         try:
             response = urllib2.urlopen(request)
-            self.print_debug("url={}".format(response.geturl()))
+            self.print_debug("url={0}".format(response.geturl()))
             content = self.chunked_read(response)
         except urllib2.HTTPError as err:
             status_code = err.code
@@ -368,7 +363,7 @@ class Traceroute(object):
                     break
                 content += data
                 read_bytes += bytes_per_read
-                self.print_debug("read_bytes={}, {}".format(read_bytes, data))
+                self.print_debug("read_bytes={0}, {1}".format(read_bytes, data))
             signal.alarm(0)
         except Exception as err:
             self.print_debug(str(err))
@@ -378,14 +373,14 @@ class Traceroute(object):
         """
         Raises exception when signal is caught.
         """
-        raise Exception("Caught signal {}".format(signum))
+        raise Exception("Caught signal {0}".format(signum))
 
     def print_debug(self, msg):
         """
         Prints debug message to standard output.
         """
         if self.debug:
-            print("[DEBUG {}] {}".format(datetime.datetime.now(), msg))
+            print("[DEBUG {0}] {1}".format(datetime.datetime.now(), msg))
 
     def get_report(self):
         report = {}

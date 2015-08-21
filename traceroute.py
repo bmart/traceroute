@@ -19,10 +19,21 @@ import requests
 import netifaces
 import time
 from tinydb import TinyDB, where
-
+import logging
 USER_AGENT = "traceroute/1.0 (+https://github.com/bmart/traceroute)"
 
 DB_FILE        = "./persistence.json"
+
+
+# Logging setup
+LOG_FILE       = "./traceroute.py.log" # TODO move to /var/log?
+FORMAT         = '%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
+logging.basicConfig(format=FORMAT, filename=LOG_FILE, level=logging.DEBUG)
+_logger = logging.getLogger('traceroute.py')
+
+
+
+
 
 # global db reference
 db            = TinyDB(DB_FILE)
@@ -419,6 +430,7 @@ def is_webhook_available(webhook_url):
         data = urllib.urlopen(webhook_url)
         return True
     except Exception,e:
+        _logger.warn("Webook offline or unavailable, application will cache report: {0}".format(e))
         return False
 
 
@@ -433,15 +445,15 @@ def purgeAndDeleteCache(webhook_cache, url):
     """
     
     totalRecords = webhook_cache.__len__() # not used currently. 
-    print "Now posting offline cache"
+    _logger.info("Now posting offline cache")
     for data in webhook_cache.all():
         try:
             result = post_result(url, data) 
         except Exception,e:
-            print "Unable to post record from cache. Message was: {0}".format(e)
+            _logger.warn("Unable to post record from cache. Message was: {0}".format(e))
     # clear cache 
     webhook_cache.purge()
-    print "Webhook cache cleared"
+    _logger.info("Webhook cache cleared")
 
 def exceeds_hop_latency(ping_time):
     """return true if hop time exceeds specified latency threshold"""
@@ -466,6 +478,7 @@ def analyze_hop_history(hop_list):
 
     # Get previous hop results, or store some if non available
     if not hop_stats.all():
+        _logger.info("First run, caching hops the first time")
         cache_traceroute_hops(hop_list)
         return event_list 
         # implication here is to wait until next call before anything really happens
@@ -483,6 +496,7 @@ def analyze_hop_history(hop_list):
     for hop in hop_list:
         for host in hop_list[hop]:
             if exceeds_hop_latency(host['rtt']):
+                _logger.info("Hop Latency Exceeded for {0}".format(host))
                 if MAX_THRESH_KEY not in event_list.keys():
                     event_list[MAX_THRESH_KEY] = []
                 event_list[MAX_THRESH_KEY].append(hop_list[hop])
@@ -493,6 +507,7 @@ def analyze_hop_history(hop_list):
     if len(res) > 0: # not sure why this would be zero, but putting here. 
         prev_hop_count  = res[0]['value']
         if prev_hop_count != len(hop_list):
+            _logger.info("Hop count has changed from {0} to {1}".format(prev_hop_count, len(hop_list)))
             event_list[HOP_COUNT_KEY] = "Hop count changed from {0} to {1}".format(prev_hop_count, len(hop_list))
 
 
@@ -510,6 +525,7 @@ def analyze_hop_history(hop_list):
                 prevRtt = get_ms_as_float(prevRes['rtt'])
                 rttDiff = curRtt - prevRtt
                 if abs(rttDiff) > Thresholds.HOP_DIFFERENCE_THRESHOLD:
+                    _logger.info("Hop time difference threshold exceeded. Current RTT {0}, Prev RTT {1} for host {2}".format(curRtt, prevRtt, host))
                     if HOP_TIME_DIFF_KEY not in event_list.keys():
                         event_list[HOP_TIME_DIFF_KEY] = []
                     event_list[HOP_TIME_DIFF_KEY].append({
@@ -603,6 +619,7 @@ def main():
 
 
     if options.webhook != "":
+       
         # If webhook is present, assume running in daemon/monitoring mode - analyze hops
         # TODO should we introduce a parameter to designate the daemon/monitor mode
         webhook_online = is_webhook_available(options.webhook)
@@ -617,6 +634,7 @@ def main():
 
 
         if len(event_list) != 0:
+            _logger.info("Events detected, will try to send to remote host if online, otherwise caching in persistent storage")
             # append section to report stating the issues or events leading to this alert
             report['event_source'] = event_list
 
@@ -625,12 +643,12 @@ def main():
                 
                 try:
                     result = post_result(options.webhook, report, options.timeout)
-                    print "Webhook POST Result: {}".format(result)
+                    _logger.info("Webhook POST Result: {}".format(result))
                     # TODO need to check that this value returns value HTTP code and cache result if invalid (404,501 etc)
                 except Exception,e:
-                    print "Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e)
+                    _logger.warn("Provided webhook {0} is invalid. Message was: {1}".format(options.webhook, e))
             else:
-                print "Webhook unavailable, caching"
+                _logger.info("Webhook unavailable, caching")
                 #cache results until data is restored
                 webhook_cache.insert(report)
     else:

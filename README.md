@@ -1,6 +1,27 @@
 # traceroute
 Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](https://dazzlepod.com/ip/) (under "Traceroute" tab)
 
+## Features
+
+This fork of traceroute.py expands on the existing functionality of the tool by adding the capability of 
+running the script in daemon mode in order to track network stability over time and report events via a webhook capability. 
+
+In addition, the report itself has been extended to not only show hop information, but also information about the network interfaces and configured
+gateways of the host the script is run from. 
+
+An init script/bash script has been provided to assist administrators in setting up this tool to run repeatedly and monitor an IP address sending alerts
+to a provided web hook. 
+
+Event reports are only fired based on 3 conditions:
+
+1. A hop takes an unacceptable amount of time
+2. A hop takes way more time than it did the previous time
+3. The total number of hops to reach a host changes. 
+
+
+
+
+
 ![Using output from traceroute.py to plot hops on Google Map](https://raw.github.com/ayeowch/traceroute/master/screenshot.png)
 
 ## Prerequisites
@@ -36,177 +57,160 @@ Multi-source traceroute with geolocation information. Demo: [IP Address Lookup](
 
 ## Usage
 
-Try the following from your Python interpreter:
 
-    >>> from traceroute import Traceroute
-    >>> traceroute = Traceroute("8.8.8.8")
-    >>> hops = traceroute.hops
-    >>> hops
-    [{'hostname': 'core-87-router', 'longitude': -74.6597, 'rtt': '2.208 ms', 'hop_num': 1, 'latitude': 40.3756, 'ip_address': '128.112.128.2'}, {'hostname': 'border-87-router', 'longitude': -74.6597, 'rtt': '0.422 ms', 'hop_num': 2, 'latitude': 40.3756, 'ip_address': '128.112.12.142'}, {'hostname': 'te0-0-1-1.204.rcr12.phl03.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '3.775 ms', 'hop_num': 3, 'latitude': 38.0, 'ip_address': '38.122.150.1'}, {'hostname': 'te0-0-1-3.rcr21.phl01.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '3.689 ms', 'hop_num': 4, 'latitude': 38.0, 'ip_address': '154.54.27.117'}, {'hostname': 'te0-0-1-3.rcr22.phl01.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '4.340 ms', 'hop_num': 4, 'latitude': 38.0, 'ip_address': '66.28.4.233'}, {'hostname': 'te0-7-0-10.mpd22.dca01.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '8.082 ms', 'hop_num': 5, 'latitude': 38.0, 'ip_address': '154.54.42.101'}, {'hostname': 'te0-7-0-10.ccr21.dca01.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '7.860 ms', 'hop_num': 5, 'latitude': 38.0, 'ip_address': '154.54.42.89'}, {'hostname': 'be2112.ccr41.iad02.atlas.cogentco.com', 'longitude': -97.0, 'rtt': '8.628 ms', 'hop_num': 6, 'latitude': 38.0, 'ip_address': '154.54.5.233'}, {'hostname': '38.88.214.50', 'longitude': -97.0, 'rtt': '8.197 ms', 'hop_num': 7, 'latitude': 38.0, 'ip_address': '38.88.214.50'}, {'hostname': '209.85.255.1', 'longitude': -122.0574, 'rtt': '9.230 ms', 'hop_num': 8, 'latitude': 37.4192, 'ip_address': '209.85.255.1'}, {'hostname': '209.85.251.101', 'longitude': -122.0574, 'rtt': '9.719 ms', 'hop_num': 8, 'latitude': 37.4192, 'ip_address': '209.85.251.101'}, {'hostname': '216.239.51.11', 'longitude': -122.0574, 'rtt': '9.811 ms', 'hop_num': 9, 'latitude': 37.4192, 'ip_address': '216.239.51.11'}, {'hostname': '72.14.238.115', 'longitude': -122.0574, 'rtt': '10.142 ms', 'hop_num': 9, 'latitude': 37.4192, 'ip_address': '72.14.238.115'}, {'hostname': '216.239.51.101', 'longitude': -122.0574, 'rtt': '9.568 ms', 'hop_num': 9, 'latitude': 37.4192, 'ip_address': '216.239.51.101'}, {'hostname': 'google-public-dns-a.google.com', 'longitude': -122.0838, 'rtt': '9.127 ms', 'hop_num': 10, 'latitude': 37.386, 'ip_address': '8.8.8.8'}]
-    >>>
+        Usage: traceroute.py --ip_address=IP_ADDRESS
 
+        Options:
+          -h, --help            show this help message and exit
+          -i IP_ADDRESS, --ip_address=IP_ADDRESS
+                                IP address of destination host (default: 8.8.8.8)
+          -j JSON_FILE, --json_file=JSON_FILE
+                                List of sources in JSON file (default: sources.json)
+          -c COUNTRY, --country=COUNTRY
+                                Traceroute will be initiated from this country; choose
+                                'LO' for localhost to run traceroute locally, 'BY' for
+                                Belarus, 'CH' for Switzerland, 'JP' for Japan, 'RU'
+                                for Russia, 'UK' for United Kingdom or 'US' for United
+                                States (default: US)
+          -t TMP_DIR, --tmp_dir=TMP_DIR
+                                Temporary directory to store downloaded traceroute
+                                results (default: /tmp)
+          -n, --no_geo          No geolocation data (default: False)
+          -s TIMEOUT, --timeout=TIMEOUT
+                                Timeout in seconds for all downloads (default: 120)
+          -d, --debug           Show debug output (default: False)
+          -w WEBHOOK, --webhook=WEBHOOK
+                                Specify URL to POST report payload rather than stdout
+          --max_latency=MAX_LATENCY
+                                Maximum latency whereby the system will trigger the
+                                webhook ( if requested ).
+          --hop_time_diff=HOP_TIME_DIFF
+                                If the time to reach a hop exceeds this value, trigger
+                                the webhook ( if requested ).
 
-You can also run the script directly by passing in the --ip_address option:
+Sample Output:
 
-    $ python traceroute.py --help
-    Usage: traceroute.py --ip_address=IP_ADDRESS
+    {
+        "ifaces": [
+            {
+                "lo": {
+                    "mac": "00:00:00:00:00:00", 
+                    "ip_address": "127.0.0.1"
+                }
+            }, 
+            {
+                "wlan0": {
+                    "mac": "8c:70:5a:b4:4e:c0", 
+                    "ip_address": "192.168.11.26"
+                }
+            }
+        ], 
+        "hops": {
+            "1": [
+                {
+                    "rtt": "3.451 ms", 
+                    "hostname": "192.168.11.1", 
+                    "ip_address": "192.168.11.1"
+                }
+            ], 
+            "2": [
+                {
+                    "rtt": "9.391 ms", 
+                    "hostname": "10.124.4.1", 
+                    "ip_address": "10.124.4.1"
+                }
+            ], 
+            "3": [
+                {
+                    "latitude": 43.6425, 
+                    "rtt": "23.226 ms", 
+                    "hostname": "67.231.220.81", 
+                    "ip_address": "67.231.220.81", 
+                    "longitude": -79.3872
+                }
+            ], 
+            "4": [
+                {
+                    "latitude": 43.6425, 
+                    "rtt": "18.802 ms", 
+                    "hostname": "so-4-0-0.gw02.ym.phub.net.cable.rogers.com", 
+                    "ip_address": "66.185.82.125", 
+                    "longitude": -79.3872
+                }
+            ], 
+            "5": [
+                {
+                    "latitude": 43.6425, 
+                    "rtt": "21.387 ms", 
+                    "hostname": "2140.ae1.bdr01.tor2.man.teksavvy.com.packetflow.ca", 
+                    "ip_address": "69.196.136.138", 
+                    "longitude": -79.3872
+                }, 
+                {
+                    "latitude": 43.6425, 
+                    "rtt": "21.969 ms", 
+                    "hostname": "69.196.136.169", 
+                    "ip_address": "69.196.136.169", 
+                    "longitude": -79.3872
+                }, 
+                {
+                    "latitude": 43.6425, 
+                    "rtt": "21.619 ms", 
+                    "hostname": "69.196.136.81", 
+                    "ip_address": "69.196.136.81", 
+                    "longitude": -79.3872
+                }
+            ], 
+            "6": [
+                {
+                    "latitude": 37.4192, 
+                    "rtt": "22.286 ms", 
+                    "hostname": "72.14.211.14", 
+                    "ip_address": "72.14.211.14", 
+                    "longitude": -122.0574
+                }
+            ], 
+            "7": [
+                {
+                    "latitude": 37.4192, 
+                    "rtt": "19.772 ms", 
+                    "hostname": "209.85.255.232", 
+                    "ip_address": "209.85.255.232", 
+                    "longitude": -122.0574
+                }
+            ], 
+            "8": [
+                {
+                    "latitude": 37.4192, 
+                    "rtt": "19.994 ms", 
+                    "hostname": "72.14.239.73", 
+                    "ip_address": "72.14.239.73", 
+                    "longitude": -122.0574
+                }
+            ], 
+            "9": [
+                {
+                    "latitude": 37.4192, 
+                    "rtt": "19.662 ms", 
+                    "hostname": "yyz08s10-in-f31.1e100.net", 
+                    "ip_address": "173.194.43.127", 
+                    "longitude": -122.0574
+                }
+            ]
+        }, 
+        "probe_end": 1440124700797.208, 
+        "pub_ip": "23.233.25.67", 
+        "routes": [
+            {
+                "AF_INET": {
+                    "interface": "wlan0", 
+                    "default": true, 
+                    "ip_address": "192.168.11.1"
+                }
+            }
+        ], 
+        "probe_start": 1440124697427.629
+    }
 
-    Options:
-      -h, --help            show this help message and exit
-      -i IP_ADDRESS, --ip_address=IP_ADDRESS
-                            IP address of destination host (default: 8.8.8.8)
-      -j JSON_FILE, --json_file=JSON_FILE
-                            List of sources in JSON file (default: sources.json)
-      -c COUNTRY, --country=COUNTRY
-                            Traceroute will be initiated from this country; choose
-                            'LO' for localhost to run traceroute locally, 'BY' for
-                            Belarus, 'CH' for Switzerland, 'JP' for Japan, 'RU'
-                            for Russia, 'UK' for United Kingdom or 'US' for United
-                            States (default: US)
-      -t TMP_DIR, --tmp_dir=TMP_DIR
-                            Temporary directory to store downloaded traceroute
-                            results (default: /tmp)
-      -n, --no_geo          No geolocation data (default: False)
-      -s TIMEOUT, --timeout=TIMEOUT
-                            Timeout in seconds for all downloads (default: 120)
-      -d, --debug           Show debug output (default: False)
+       
 
-    $ python traceroute.py --ip_address=8.8.8.8
-    [
-        {
-            "hostname": "core-87-router",
-            "longitude": -74.6597,
-            "rtt": "3.035 ms",
-            "hop_num": 1,
-            "latitude": 40.3756,
-            "ip_address": "128.112.128.2"
-        },
-        {
-            "hostname": "border-87-router",
-            "longitude": -74.6597,
-            "rtt": "3.440 ms",
-            "hop_num": 2,
-            "latitude": 40.3756,
-            "ip_address": "128.112.12.142"
-        },
-        {
-            "hostname": "te0-0-1-1.204.rcr12.phl03.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "3.588 ms",
-            "hop_num": 3,
-            "latitude": 38.0,
-            "ip_address": "38.122.150.1"
-        },
-        {
-            "hostname": "te0-0-1-3.rcr22.phl01.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "3.441 ms",
-            "hop_num": 4,
-            "latitude": 38.0,
-            "ip_address": "66.28.4.233"
-        },
-        {
-            "hostname": "te0-7-0-10.mpd22.dca01.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "7.455 ms",
-            "hop_num": 5,
-            "latitude": 38.0,
-            "ip_address": "154.54.42.101"
-        },
-        {
-            "hostname": "te0-7-0-10.ccr21.dca01.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "7.573 ms",
-            "hop_num": 5,
-            "latitude": 38.0,
-            "ip_address": "154.54.42.89"
-        },
-        {
-            "hostname": "te0-7-0-10.mpd22.dca01.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "7.521 ms",
-            "hop_num": 5,
-            "latitude": 38.0,
-            "ip_address": "154.54.42.101"
-        },
-        {
-            "hostname": "be2112.ccr41.iad02.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "8.611 ms",
-            "hop_num": 6,
-            "latitude": 38.0,
-            "ip_address": "154.54.5.233"
-        },
-        {
-            "hostname": "be2176.ccr41.iad02.atlas.cogentco.com",
-            "longitude": -97.0,
-            "rtt": "8.640 ms",
-            "hop_num": 6,
-            "latitude": 38.0,
-            "ip_address": "154.54.41.53"
-        },
-        {
-            "hostname": "38.88.214.50",
-            "longitude": -97.0,
-            "rtt": "8.655 ms",
-            "hop_num": 7,
-            "latitude": 38.0,
-            "ip_address": "38.88.214.50"
-        },
-        {
-            "hostname": "209.85.251.101",
-            "longitude": -122.0574,
-            "rtt": "9.783 ms",
-            "hop_num": 8,
-            "latitude": 37.4192,
-            "ip_address": "209.85.251.101"
-        },
-        {
-            "hostname": "209.85.246.227",
-            "longitude": -122.0574,
-            "rtt": "9.313 ms",
-            "hop_num": 8,
-            "latitude": 37.4192,
-            "ip_address": "209.85.246.227"
-        },
-        {
-            "hostname": "209.85.246.225",
-            "longitude": -122.0574,
-            "rtt": "8.308 ms",
-            "hop_num": 8,
-            "latitude": 37.4192,
-            "ip_address": "209.85.246.225"
-        },
-        {
-            "hostname": "216.239.51.101",
-            "longitude": -122.0574,
-            "rtt": "12.102 ms",
-            "hop_num": 9,
-            "latitude": 37.4192,
-            "ip_address": "216.239.51.101"
-        },
-        {
-            "hostname": "216-239-51-13.google.com",
-            "longitude": -122.0574,
-            "rtt": "8.993 ms",
-            "hop_num": 9,
-            "latitude": 37.4192,
-            "ip_address": "216.239.51.13"
-        },
-        {
-            "hostname": "216.239.51.9",
-            "longitude": -122.0574,
-            "rtt": "8.731 ms",
-            "hop_num": 9,
-            "latitude": 37.4192,
-            "ip_address": "216.239.51.9"
-        },
-        {
-            "hostname": "google-public-dns-a.google.com",
-            "longitude": -122.0838,
-            "rtt": "8.775 ms",
-            "hop_num": 10,
-            "latitude": 37.386,
-            "ip_address": "8.8.8.8"
-        }
-    ]
